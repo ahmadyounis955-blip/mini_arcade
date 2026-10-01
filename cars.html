@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>2 Cars - Mobile Edition</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap');
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+      overflow: hidden;
+      touch-action: none;
+      height: 100vh;
+      height: 100dvh;
+      width: 100vw;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Screen tap feedback active state */
+    .tap-overlay-active {
+      opacity: 0.25 !important;
+      transition: opacity 0.05s ease-out;
+    }
+
+    /* Pulse animation for touch prompts */
+    @keyframes pulseSlow {
+      0%, 100% { opacity: 0.6; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.05); }
+    }
+
+    .pulse-touch {
+      animation: pulseSlow 1.8s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 flex flex-col items-center justify-center min-h-screen overflow-hidden select-none">
+
+  <!-- Main Game Outer Wrap -->
+  <div class="relative w-full max-w-md h-full max-h-[920px] bg-slate-900 flex flex-col items-center justify-between border-x border-slate-800 shadow-2xl overflow-hidden">
+
+    <!-- Top HUD Bar -->
+    <div class="w-full px-5 py-3 bg-slate-900/90 border-b border-slate-800/80 flex justify-between items-center z-20 backdrop-blur-md">
+      <div class="flex items-center gap-2">
+        <span class="w-3 h-3 rounded-full bg-red-500 animate-ping"></span>
+        <span class="text-xs font-bold text-slate-400 tracking-wider uppercase">2 CARS</span>
+      </div>
+      <div class="flex items-center gap-6">
+        <div class="text-right">
+          <div class="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">BEST</div>
+          <div id="highScoreText" class="text-base font-extrabold text-amber-400">0</div>
+        </div>
+        <div class="text-right">
+          <div class="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">SCORE</div>
+          <div id="scoreText" class="text-xl font-extrabold text-emerald-400">0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Interactive Canvas & Control Layer Container -->
+    <div class="relative w-full flex-1 bg-slate-950 overflow-hidden flex items-center justify-center">
+      
+      <!-- Main Game Canvas -->
+      <canvas id="gameCanvas" class="w-full h-full block cursor-pointer"></canvas>
+
+      <!-- Left / Right Touch Visual Feedback Overlays -->
+      <div id="leftTapFeedback" class="absolute left-0 top-0 w-1/2 h-full bg-red-500/0 pointer-events-none transition-opacity duration-150"></div>
+      <div id="rightTapFeedback" class="absolute right-0 top-0 w-1/2 h-full bg-blue-500/0 pointer-events-none transition-opacity duration-150"></div>
+
+      <!-- Touch Zone Guide Overlay (Shows on Start) -->
+      <div id="touchZoneGuide" class="absolute inset-0 flex pointer-events-none z-10 opacity-70">
+        <div class="w-1/2 h-full border-r border-dashed border-red-500/30 flex flex-col items-center justify-end pb-12">
+          <div class="bg-red-500/20 text-red-300 border border-red-500/40 px-3 py-1.5 rounded-full text-xs font-bold pulse-touch flex items-center gap-1.5">
+            <span>👈 TAP LEFT</span>
+          </div>
+        </div>
+        <div class="w-1/2 h-full flex flex-col items-center justify-end pb-12">
+          <div class="bg-blue-500/20 text-blue-300 border border-blue-500/40 px-3 py-1.5 rounded-full text-xs font-bold pulse-touch flex items-center gap-1.5">
+            <span>TAP RIGHT 👉</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Start Overlay Modal -->
+      <div id="startOverlay" class="absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center z-30">
+        <div class="w-16 h-16 mb-4 rounded-2xl bg-gradient-to-tr from-red-500 to-blue-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
+          <span class="text-2xl">🚘</span>
+        </div>
+        <h1 class="text-3xl font-extrabold tracking-tight text-white mb-2">2 CARS</h1>
+        <p class="text-xs text-slate-300 max-w-xs leading-relaxed mb-6">
+          Control <span class="text-red-400 font-bold">Left</span> & <span class="text-blue-400 font-bold">Right</span> cars simultaneously!
+        </p>
+
+        <!-- Rules Box -->
+        <div class="w-full bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 mb-6 text-left space-y-2 text-xs">
+          <div class="flex items-center gap-2 text-slate-200">
+            <span class="w-4 h-4 rounded-full bg-emerald-400 flex items-center justify-center text-[10px] text-slate-950 font-black">✓</span>
+            <span>Collect all <strong class="text-emerald-400">CIRCLES</strong> ⭕</span>
+          </div>
+          <div class="flex items-center gap-2 text-slate-200">
+            <span class="w-4 h-4 rounded-full bg-red-400 flex items-center justify-center text-[10px] text-slate-950 font-black">✕</span>
+            <span>Dodge all <strong class="text-rose-400">SQUARES</strong> ⏹️</span>
+          </div>
+        </div>
+
+        <button id="startBtn" class="w-full py-4 bg-gradient-to-r from-red-500 via-purple-500 to-blue-500 text-white font-extrabold text-base rounded-xl shadow-lg shadow-purple-500/30 active:scale-95 transition-all">
+          TAP TO START
+        </button>
+      </div>
+
+      <!-- Game Over Modal -->
+      <div id="gameOverOverlay" class="absolute inset-0 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center z-30 hidden">
+        <div class="w-16 h-16 mb-3 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-3xl">
+          💥
+        </div>
+        <h2 class="text-2xl font-black text-rose-400 mb-1">GAME OVER</h2>
+        <p id="gameOverReason" class="text-xs text-slate-400 mb-6">You hit a square!</p>
+
+        <!-- Score Summary Card -->
+        <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl p-4 mb-6 flex justify-around items-center">
+          <div>
+            <div class="text-[10px] text-slate-400 font-semibold tracking-wider">SCORE</div>
+            <div id="finalScoreText" class="text-2xl font-black text-white">0</div>
+          </div>
+          <div class="w-px h-8 bg-slate-800"></div>
+          <div>
+            <div class="text-[10px] text-slate-400 font-semibold tracking-wider">BEST</div>
+            <div id="finalBestText" class="text-2xl font-black text-amber-400">0</div>
+          </div>
+        </div>
+
+        <button id="restartBtn" class="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-base rounded-xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-all">
+          PLAY AGAIN 🔄
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Bottom Mobile Helper Instructions -->
+    <div class="w-full py-2.5 px-4 bg-slate-900/90 border-t border-slate-800/80 text-center text-[11px] text-slate-400 flex justify-between items-center z-20">
+      <span>Tap <strong class="text-red-400">LEFT</strong> for Red Car</span>
+      <span>Tap <strong class="text-blue-400">RIGHT</strong> for Blue Car</span>
+    </div>
+  </div>
+
+  <script>
+    // Safe Audio Synthesizer (Web Audio API) with safe gestures unlock for older Android
+    const SoundEngine = {
+      ctx: null,
+      init() {
+        if (!this.ctx) {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) {
+            this.ctx = new AudioCtx();
+          }
+        }
+        if (this.ctx && this.ctx.state === "suspended") {
+          this.ctx.resume();
+        }
+      },
+      playCollect() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(523.25, now); // C5
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.1); // A5
+        gain.gain.setValueAtTime(0.15, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(now + 0.1);
+      },
+      playSwitch() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(300, now);
+        osc.frequency.exponentialRampToValueAtTime(150, now + 0.05);
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(now + 0.05);
+      },
+      playCrash() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(180, now);
+        osc.frequency.exponentialRampToValueAtTime(40, now + 0.3);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(now + 0.3);
+      }
+    };
+
+    // Canvas Setup
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    // UI Elements
+    const scoreText = document.getElementById("scoreText");
+    const highScoreText = document.getElementById("highScoreText");
+    const finalScoreText = document.getElementById("finalScoreText");
+    const finalBestText = document.getElementById("finalBestText");
+    const gameOverReason = document.getElementById("gameOverReason");
+    const startOverlay = document.getElementById("startOverlay");
+    const gameOverOverlay = document.getElementById("gameOverOverlay");
+    const touchZoneGuide = document.getElementById("touchZoneGuide");
+    const startBtn = document.getElementById("startBtn");
+    const restartBtn = document.getElementById("restartBtn");
+    const leftTapFeedback = document.getElementById("leftTapFeedback");
+    const rightTapFeedback = document.getElementById("rightTapFeedback");
+
+    // Game Physics & State Settings (Tailored for Easy Mobile Play)
+    let score = 0;
+    let highScore = parseInt(localStorage.getItem("2cars_hi_score") || "0", 10);
+    let isPlaying = false;
+    let isGameOver = false;
+    let frameCount = 0;
+    
+    // Easier Mobile Speed Settings
+    let baseSpeed = 3.2; // Slower starting speed
+    let currentSpeed = 3.2;
+    let maxSpeed = 6.8;  // Cap max speed so it remains controllable
+    let spawnInterval = 85; // Gap between obstacle spawns
+
+    // Cars State (Red = Left Car, Blue = Right Car)
+    // Lanes index: 0, 1 for Left side | 2, 3 for Right side
+    const cars = {
+      left: {
+        lane: 0, // 0 = Outer Left, 1 = Inner Left
+        targetLane: 0,
+        x: 0,
+        y: 0,
+        width: 34,
+        height: 52,
+        color: "#f43f5e", // Bright Pink-Red
+        accentColor: "#ffe4e6",
+        side: "left"
+      },
+      right: {
+        lane: 3, // 2 = Inner Right, 3 = Outer Right
+        targetLane: 3,
+        x: 0,
+        y: 0,
+        width: 34,
+        height: 52,
+        color: "#3b82f6", // Vibrant Blue
+        accentColor: "#dbeafe",
+        side: "right"
+      }
+    };
+
+    let items = [];      // Collectibles (Circles) and Obstacles (Squares)
+    let particles = [];  // Explosions / Particle effects
+
+    // Track Lane X positions based on current canvas width
+    let laneWidth = 0;
+    let laneCenters = [0, 0, 0, 0];
+
+    // Resize canvas dynamically to match its responsive CSS layout box
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+
+      laneWidth = canvas.width / 4;
+      for (let i = 0; i < 4; i++) {
+        laneCenters[i] = laneWidth * i + laneWidth / 2;
+      }
+
+      // Reposition cars Y near bottom
+      const carY = canvas.height - 90;
+      cars.left.y = carY;
+      cars.right.y = carY;
+
+      // Update cars X position to their current lane centers
+      cars.left.x = laneCenters[cars.left.lane];
+      cars.right.x = laneCenters[cars.right.lane];
+    }
+
+    function spawnItem() {
+      // Choose side: Left (0, 1) or Right (2, 3) or both
+      const side = Math.random() < 0.5 ? "left" : "right";
+      
+      const spawnForSide = (sideType) => {
+        const laneOffset = sideType === "left" ? 0 : 2;
+        const selectedLane = laneOffset + (Math.random() < 0.5 ? 0 : 1);
+        
+        // 60% Circle (Collectible), 40% Square (Hazard)
+        const type = Math.random() < 0.6 ? "circle" : "square";
+        
+        items.push({
+          type: type,
+          lane: selectedLane,
+          x: laneCenters[selectedLane],
+          y: -40,
+          radius: 16,     // Larger circle radius for easy tapping
+          size: 28,       // Larger square size
+          color: sideType === "left" ? "#f43f5e" : "#3b82f6",
+          passed: false
+        });
+      };
+
+      spawnForSide(side);
+
+      // Occasionally spawn on the other side simultaneously (25% chance)
+      if (Math.random() < 0.25) {
+        spawnForSide(side === "left" ? "right" : "left");
+      }
+    }
+
+    function createParticles(x, y, color, count = 12) {
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 4 + 1;
+        particles.push({
+          x: x,
+          y: y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          radius: Math.random() * 4 + 2,
+          color: color,
+          alpha: 1,
+          decay: Math.random() * 0.03 + 0.02
+        });
+      }
+    }
+
+    function toggleLeftCar() {
+      SoundEngine.init();
+      cars.left.targetLane = cars.left.targetLane === 0 ? 1 : 0;
+      SoundEngine.playSwitch();
+      triggerFeedback(leftTapFeedback, "bg-red-500/20");
+    }
+
+    function toggleRightCar() {
+      SoundEngine.init();
+      cars.right.targetLane = cars.right.targetLane === 2 ? 3 : 2;
+      SoundEngine.playSwitch();
+      triggerFeedback(rightTapFeedback, "bg-blue-500/20");
+    }
+
+    function triggerFeedback(element, colorClass) {
+      element.className = `absolute ${element.id.includes("left") ? "left-0" : "right-0"} top-0 w-1/2 h-full ${colorClass} pointer-events-none tap-overlay-active`;
+      setTimeout(() => {
+        element.className = `absolute ${element.id.includes("left") ? "left-0" : "right-0"} top-0 w-1/2 h-full bg-transparent pointer-events-none transition-opacity duration-150`;
+      }, 100);
+    }
+
+    function update() {
+      if (!isPlaying || isGameOver) return;
+
+      frameCount++;
+
+      // Increase speed very gradually
+      if (currentSpeed < maxSpeed) {
+        currentSpeed += 0.0008;
+      }
+
+      // Smoothly interpolate cars towards target lane center
+      ["left", "right"].forEach(side => {
+        const car = cars[side];
+        const targetX = laneCenters[car.targetLane];
+        car.lane = car.targetLane;
+        car.x += (targetX - car.x) * 0.25; // Smooth horizontal transition
+      });
+
+      // Spawn Items
+      const adjustedInterval = Math.max(45, Math.floor(spawnInterval - (currentSpeed - baseSpeed) * 8));
+      if (frameCount % adjustedInterval === 0) {
+        spawnItem();
+      }
+
+      // Update Items
+      for (let i = items.length - 1; i >= 0; i--) {
+        const item = items[i];
+        item.y += currentSpeed;
+
+        // Check collision with Left Car or Right Car
+        const targetCar = item.lane < 2 ? cars.left : cars.right;
+        
+        // Generous Hitbox Tolerance for easy mobile play
+        const dx = Math.abs(item.x - targetCar.x);
+        const dy = Math.abs(item.y - targetCar.y);
+
+        if (dx < targetCar.width / 2 + 10 && dy < targetCar.height / 2 + 12) {
+          if (item.type === "circle") {
+            // Collected Circle!
+            score++;
+            scoreText.textContent = score;
+            SoundEngine.playCollect();
+            createParticles(item.x, item.y, item.color, 10);
+            items.splice(i, 1);
+            continue;
+          } else if (item.type === "square") {
+            // Hit Square -> Game Over
+            triggerGameOver("Hit a square!");
+            createParticles(targetCar.x, targetCar.y, "#f43f5e", 20);
+            return;
+          }
+        }
+
+        // Check if item went past the bottom of screen
+        if (item.y - 20 > canvas.height) {
+          if (item.type === "circle" && !item.passed) {
+            // Missed a Circle -> Game Over
+            triggerGameOver("Missed a circle!");
+            return;
+          }
+          items.splice(i, 1);
+        }
+      }
+
+      // Update Particles
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.alpha -= p.decay;
+        if (p.alpha <= 0) {
+          particles.splice(i, 1);
+        }
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 1. Draw Road Lanes
+      ctx.strokeStyle = "rgba(51, 65, 85, 0.4)";
+      ctx.lineWidth = 1.5;
+      
+      // Lane Dividers
+      for (let i = 1; i < 4; i++) {
+        ctx.beginPath();
+        if (i === 2) {
+          // Center Thick Divider separating Left & Right Tracks
+          ctx.strokeStyle = "rgba(148, 163, 184, 0.8)";
+          ctx.lineWidth = 3;
+        } else {
+          ctx.strokeStyle = "rgba(51, 65, 85, 0.5)";
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([12, 12]);
+        }
+        ctx.moveTo(laneWidth * i, 0);
+        ctx.lineTo(laneWidth * i, canvas.height);
+        ctx.stroke();
+        ctx.setLineDash([]); // Reset line dash
+      }
+
+      // 2. Draw Items (Circles & Squares)
+      items.forEach(item => {
+        if (item.type === "circle") {
+          // Draw Circle Collectible
+          ctx.fillStyle = item.color;
+          ctx.beginPath();
+          ctx.arc(item.x, item.y, item.radius, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Inner White Ring Accent
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        } else {
+          // Draw Square Hazard
+          ctx.fillStyle = item.color;
+          ctx.beginPath();
+          const half = item.size / 2;
+          ctx.roundRect 
+            ? ctx.roundRect(item.x - half, item.y - half, item.size, item.size, 6)
+            : ctx.rect(item.x - half, item.y - half, item.size, item.size);
+          ctx.fill();
+
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      });
+
+      // 3. Draw Cars
+      ["left", "right"].forEach(side => {
+        const car = cars[side];
+        
+        ctx.save();
+        ctx.translate(car.x, car.y);
+
+        // Car Body Shadow
+        ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+        ctx.fillRect(-car.width / 2 + 2, -car.height / 2 + 4, car.width, car.height);
+
+        // Main Car Body
+        ctx.fillStyle = car.color;
+        if (ctx.roundRect) {
+          ctx.beginPath();
+          ctx.roundRect(-car.width / 2, -car.height / 2, car.width, car.height, 8);
+          ctx.fill();
+        } else {
+          ctx.fillRect(-car.width / 2, -car.height / 2, car.width, car.height);
+        }
+
+        // Windshield Accent
+        ctx.fillStyle = car.accentColor;
+        ctx.fillRect(-car.width / 2 + 6, -car.height / 2 + 8, car.width - 12, 12);
+
+        // Headlights
+        ctx.fillStyle = "#fef08a";
+        ctx.fillRect(-car.width / 2 + 4, -car.height / 2 + 2, 6, 3);
+        ctx.fillRect(car.width / 2 - 10, -car.height / 2 + 2, 6, 3);
+
+        ctx.restore();
+      });
+
+      // 4. Draw Particles
+      particles.forEach(p => {
+        ctx.save();
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+
+    function triggerGameOver(reason) {
+      isGameOver = true;
+      isPlaying = false;
+      SoundEngine.playCrash();
+
+      if (score > highScore) {
+        highScore = score;
+        localStorage.setItem("2cars_hi_score", highScore.toString());
+      }
+
+      scoreText.textContent = score;
+      highScoreText.textContent = highScore;
+      finalScoreText.textContent = score;
+      finalBestText.textContent = highScore;
+      gameOverReason.textContent = reason;
+
+      gameOverOverlay.classList.remove("hidden");
+    }
+
+    function resetGame() {
+      score = 0;
+      currentSpeed = baseSpeed;
+      frameCount = 0;
+      items = [];
+      particles = [];
+      isGameOver = false;
+      isPlaying = true;
+
+      // Reset Cars to starting lanes
+      cars.left.lane = 0;
+      cars.left.targetLane = 0;
+      cars.right.lane = 3;
+      cars.right.targetLane = 3;
+
+      scoreText.textContent = "0";
+      highScoreText.textContent = highScore;
+
+      gameOverOverlay.classList.add("hidden");
+      startOverlay.classList.add("hidden");
+      touchZoneGuide.classList.add("hidden");
+
+      resizeCanvas();
+    }
+
+    // Input Listeners for Touch Screen & Keyboard
+    function handleScreenTouch(clientX) {
+      if (!isPlaying) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const touchX = clientX - rect.left;
+
+      // Tap Left half -> Toggle Left Car | Tap Right half -> Toggle Right Car
+      if (touchX < rect.width / 2) {
+        toggleLeftCar();
+      } else {
+        toggleRightCar();
+      }
+    }
+
+    // Touch events for Mobile Devices
+    canvas.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      if (e.touches.length > 0) {
+        // Handle all simultaneous multi-touch points
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          handleScreenTouch(e.changedTouches[i].clientX);
+        }
+      }
+    }, { passive: false });
+
+    // Pointer events fallback
+    canvas.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "mouse") {
+        handleScreenTouch(e.clientX);
+      }
+    });
+
+    // Keyboard support for desktop testing (A/D or Left/Right arrows)
+    window.addEventListener("keydown", (e) => {
+      if (!isPlaying) return;
+
+      if (e.code === "KeyA" || e.code === "ArrowLeft") {
+        toggleLeftCar();
+      } else if (e.code === "KeyD" || e.code === "ArrowRight") {
+        toggleRightCar();
+      }
+    });
+
+    startBtn.addEventListener("click", () => {
+      SoundEngine.init();
+      resetGame();
+    });
+
+    restartBtn.addEventListener("click", () => {
+      SoundEngine.init();
+      resetGame();
+    });
+
+    window.addEventListener("resize", resizeCanvas);
+
+    // Main Game Animation Loop
+    function gameLoop() {
+      update();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Initialize Game on Load
+    window.onload = function () {
+      highScoreText.textContent = highScore;
+      resizeCanvas();
+      gameLoop();
+    };
+  </script>
+</body>
+</html>

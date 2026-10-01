@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>One Line Connect - Infinite Procedural Puzzle</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #0f172a;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    .glass-card {
+      background: rgba(30, 41, 59, 0.75);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .btn-glow {
+      box-shadow: 0 0 15px rgba(6, 182, 212, 0.4);
+      transition: all 0.2s ease;
+    }
+    .btn-glow:active {
+      transform: scale(0.95);
+      box-shadow: 0 0 5px rgba(6, 182, 212, 0.6);
+    }
+  </style>
+</head>
+<body class="flex flex-col items-center justify-between min-h-screen text-slate-100 p-4 select-none">
+
+  <!-- Top Bar HUD -->
+  <header class="w-full max-w-lg glass-card rounded-2xl p-4 shadow-xl z-10 flex flex-col gap-2">
+    <div class="flex items-center justify-between">
+      <div>
+        <div class="text-xs uppercase tracking-widest text-cyan-400 font-bold">Puzzle Level</div>
+        <div class="text-2xl font-black tracking-tight text-white flex items-center gap-2">
+          <span id="levelDisplay">Level 1</span>
+          <span id="difficultyBadge" class="text-xs px-2 py-0.5 rounded-full bg-cyan-900/80 text-cyan-300 border border-cyan-500/30">Easy</span>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="hintBtn" class="px-3 py-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-bold hover:bg-amber-500/30 transition active:scale-95 flex items-center gap-1">
+          💡 Hint (<span id="hintCount">3</span>)
+        </button>
+        <button id="restartBtn" class="px-3 py-2 rounded-xl bg-slate-700/60 text-slate-300 border border-slate-600 text-xs font-bold hover:bg-slate-700 transition active:scale-95">
+          🔄 Restart
+        </button>
+      </div>
+    </div>
+
+    <!-- Stats summary -->
+    <div class="flex justify-around items-center pt-2 border-t border-slate-700/50 text-xs text-slate-400">
+      <div>Nodes: <span id="nodeCountText" class="text-slate-200 font-bold">0</span></div>
+      <div>Edges: <span id="edgeCountText" class="text-slate-200 font-bold">0</span></div>
+      <div>Progress: <span id="progressText" class="text-cyan-400 font-bold">0%</span></div>
+    </div>
+  </header>
+
+  <!-- Main Game Canvas Container -->
+  <main class="relative w-full max-w-lg my-auto flex items-center justify-center aspect-square min-h-[300px]">
+    <canvas id="gameCanvas" class="w-full h-full rounded-3xl glass-card border border-slate-700/60 shadow-2xl"></canvas>
+
+    <!-- Level Victory Overlay Screen -->
+    <div id="victoryModal" class="hidden absolute inset-0 glass-card rounded-3xl flex flex-col items-center justify-center p-6 text-center z-20 backdrop-blur-md">
+      <div class="w-16 h-16 bg-cyan-500/20 border-2 border-cyan-400 rounded-full flex items-center justify-center text-3xl mb-4 animate-bounce">
+        🌟
+      </div>
+      <h2 class="text-3xl font-black text-white mb-1">Level Cleared!</h2>
+      <p id="victorySubtext" class="text-sm text-slate-300 mb-6">Excellent spatial pathfinding.</p>
+      
+      <div class="w-full bg-slate-800/80 rounded-xl p-4 mb-6 border border-slate-700/80 text-xs space-y-2">
+        <div class="flex justify-between"><span class="text-slate-400">Lines Drawn:</span><span id="statLines" class="text-cyan-400 font-bold">100%</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">Next Grid Size:</span><span id="statGrid" class="text-slate-200 font-bold">4x4</span></div>
+      </div>
+
+      <button id="nextLevelBtn" class="w-full py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-black text-base uppercase tracking-wider btn-glow">
+        Next Level ➔
+      </button>
+    </div>
+  </main>
+
+  <!-- Footer Controls -->
+  <footer class="w-full max-w-lg text-center text-xs text-slate-500 py-2">
+    <span>Connect all edges in a single line without retracing your steps!</span>
+  </footer>
+
+  <script>
+    // --- Audio Sound Synthesizer (Web Audio API) ---
+    class SoundController {
+      constructor() {
+        this.ctx = null;
+      }
+      init() {
+        if (!this.ctx) {
+          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+      }
+      playNodeConnect(freq = 440) {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+        gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.15);
+      }
+      playError() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.2);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.2);
+      }
+      playWin() {
+        if (!this.ctx) return;
+        const notes = [523.25, 659.25, 783.99, 1046.50];
+        notes.forEach((freq, idx) => {
+          setTimeout(() => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+            gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.3);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.3);
+          }, idx * 90);
+        });
+      }
+    }
+
+    const sound = new SoundController();
+
+    // --- Fixed & Guaranteed Solvable Level Generator ---
+    class ProceduralGraphGenerator {
+      static getDifficultyParameters(level) {
+        if (level <= 5) {
+          return { gridSize: 3, numTargetEdges: 3 + level, name: "Easy" };
+        } else if (level <= 15) {
+          return { gridSize: 4, numTargetEdges: 8 + Math.floor((level - 5) * 0.8), name: "Medium" };
+        } else if (level <= 30) {
+          return { gridSize: 5, numTargetEdges: 15 + Math.floor((level - 15) * 0.9), name: "Hard" };
+        } else {
+          const extra = level - 30;
+          const gridSize = Math.min(7, 5 + Math.floor(extra / 15));
+          const numTargetEdges = 28 + extra * 2;
+          return { gridSize, numTargetEdges, name: "Expert ∞" };
+        }
+      }
+
+      static generateLevel(levelIndex) {
+        const params = this.getDifficultyParameters(levelIndex);
+        const { gridSize, numTargetEdges } = params;
+
+        let gridPoints = [];
+        for (let r = 0; r < gridSize; r++) {
+          for (let c = 0; c < gridSize; c++) {
+            gridPoints.push({ x: c, y: r });
+          }
+        }
+
+        const getEdgeKey = (p1, p2) => {
+          const idx1 = p1.y * gridSize + p1.x;
+          const idx2 = p2.y * gridSize + p2.x;
+          return idx1 < idx2 ? `${idx1}-${idx2}` : `${idx2}-${idx1}`;
+        };
+
+        // Guarantee 100% solvable level by building a pure non-repeating Walk/Path
+        let eulerianSequence = [];
+        let edges = [];
+        let edgeMap = new Set();
+
+        let currNode = gridPoints[Math.floor(Math.random() * gridPoints.length)];
+        eulerianSequence.push(currNode);
+
+        let resetAttempts = 0;
+        while (edges.length < numTargetEdges && resetAttempts < 50) {
+          let neighbors = gridPoints.filter(p => {
+            const dx = Math.abs(p.x - currNode.x);
+            const dy = Math.abs(p.y - currNode.y);
+            if ((dx <= 1 && dy <= 1) && !(dx === 0 && dy === 0)) {
+              let key = getEdgeKey(currNode, p);
+              return !edgeMap.has(key); // Only unused edges to ensure pure path
+            }
+            return false;
+          });
+
+          if (neighbors.length > 0) {
+            let nextNode = neighbors[Math.floor(Math.random() * neighbors.length)];
+            let key = getEdgeKey(currNode, nextNode);
+            edgeMap.add(key);
+            edges.push({ u: currNode, v: nextNode, key });
+            eulerianSequence.push(nextNode);
+            currNode = nextNode;
+          } else {
+            // Pick a node from current path that has unused neighbors
+            let backtrackNodes = eulerianSequence.filter(pt => {
+              return gridPoints.some(p => {
+                const dx = Math.abs(p.x - pt.x);
+                const dy = Math.abs(p.y - pt.y);
+                return (dx <= 1 && dy <= 1) && !(dx === 0 && dy === 0) && !edgeMap.has(getEdgeKey(pt, p));
+              });
+            });
+
+            if (backtrackNodes.length > 0) {
+              currNode = backtrackNodes[Math.floor(Math.random() * backtrackNodes.length)];
+            } else {
+              resetAttempts++;
+              if (edges.length >= Math.max(3, numTargetEdges - 3)) break; // Sufficient length created
+            }
+          }
+        }
+
+        let usedNodesMap = new Map();
+        let uniqueNodes = [];
+
+        edges.forEach(e => {
+          [e.u, e.v].forEach(pt => {
+            let id = `${pt.x},${pt.y}`;
+            if (!usedNodesMap.has(id)) {
+              let nodeObj = { id, gridX: pt.x, gridY: pt.y };
+              usedNodesMap.set(id, nodeObj);
+              uniqueNodes.push(nodeObj);
+            }
+          });
+        });
+
+        let formattedEdges = edges.map(e => {
+          const uId = `${e.u.x},${e.u.y}`;
+          const vId = `${e.v.x},${e.v.y}`;
+          return {
+            u: usedNodesMap.get(uId),
+            v: usedNodesMap.get(vId),
+            key: e.key,
+            visited: false
+          };
+        });
+
+        return {
+          nodes: uniqueNodes,
+          edges: formattedEdges,
+          gridSize: gridSize,
+          difficultyName: params.name,
+          solutionPath: eulerianSequence
+        };
+      }
+    }
+
+    // --- Canvas Game Engine ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    let currentLevel = 1;
+    let hintCount = 3;
+    let levelData = null;
+    let nodes = [];
+    let edges = [];
+
+    // Interaction state
+    let activePath = []; 
+    let activeEdges = new Set(); 
+    let isDragging = false;
+    let currentPointerPos = { x: 0, y: 0 };
+
+    // FX Particles
+    let winParticles = [];
+
+    // Scale / DPI management
+    let scaleRatio = 1;
+    let bounds = { padding: 50, width: 0, height: 0 };
+
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      scaleRatio = dpr;
+
+      bounds.width = rect.width;
+      bounds.height = rect.height;
+
+      recalculateNodePositions();
+      render();
+    }
+
+    function recalculateNodePositions() {
+      if (!levelData) return;
+
+      const size = levelData.gridSize;
+      const padding = 60;
+      const availableWidth = bounds.width - padding * 2;
+      const availableHeight = bounds.height - padding * 2;
+      const stepX = availableWidth / Math.max(1, size - 1);
+      const stepY = availableHeight / Math.max(1, size - 1);
+
+      nodes.forEach(n => {
+        n.x = padding + n.gridX * stepX;
+        n.y = padding + n.gridY * stepY;
+      });
+    }
+
+    function loadLevel(levelIdx) {
+      currentLevel = levelIdx;
+      levelData = ProceduralGraphGenerator.generateLevel(currentLevel);
+
+      nodes = levelData.nodes;
+      edges = levelData.edges;
+
+      activePath = [];
+      activeEdges.clear();
+      isDragging = false;
+
+      // Update UI Header
+      document.getElementById('levelDisplay').innerText = `Level ${currentLevel}`;
+      document.getElementById('difficultyBadge').innerText = levelData.difficultyName;
+      document.getElementById('nodeCountText').innerText = nodes.length;
+      document.getElementById('edgeCountText').innerText = edges.length;
+      document.getElementById('progressText').innerText = '0%';
+      document.getElementById('victoryModal').classList.add('hidden');
+
+      recalculateNodePositions();
+      render();
+    }
+
+    // --- Pointer & Touch Input Handling ---
+    function getCanvasPointerPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return {
+        x: clientX - rect.left,
+        y: clientY - rect.top
+      };
+    }
+
+    function findNodeAt(pos) {
+      const hitRadius = 28;
+      return nodes.find(n => Math.hypot(n.x - pos.x, n.y - pos.y) < hitRadius);
+    }
+
+    function areNodesConnectedByEdge(n1, n2) {
+      const key1 = `${n1.gridY * levelData.gridSize + n1.gridX}-${n2.gridY * levelData.gridSize + n2.gridX}`;
+      const key2 = `${n2.gridY * levelData.gridSize + n2.gridX}-${n1.gridY * levelData.gridSize + n1.gridX}`;
+      return edges.find(e => e.key === key1 || e.key === key2);
+    }
+
+    function handlePointerDown(e) {
+      sound.init();
+      const pos = getCanvasPointerPos(e);
+      currentPointerPos = pos;
+      const touchedNode = findNodeAt(pos);
+
+      if (touchedNode) {
+        isDragging = true;
+        if (activePath.length === 0) {
+          activePath.push(touchedNode);
+          sound.playNodeConnect(400);
+        } else if (activePath[activePath.length - 1] === touchedNode) {
+          // Continue dragging
+        } else {
+          activePath = [touchedNode];
+          activeEdges.clear();
+          sound.playNodeConnect(400);
+        }
+        updateProgress();
+        render();
+      }
+    }
+
+    function handlePointerMove(e) {
+      const pos = getCanvasPointerPos(e);
+      currentPointerPos = pos;
+
+      if (!isDragging || activePath.length === 0) return;
+
+      const lastNode = activePath[activePath.length - 1];
+      const targetNode = findNodeAt(pos);
+
+      if (targetNode && targetNode !== lastNode) {
+        // Backtrack/undo support
+        if (activePath.length > 1 && activePath[activePath.length - 2] === targetNode) {
+          const removedLast = activePath.pop();
+          const edge = areNodesConnectedByEdge(lastNode, removedLast);
+          if (edge) activeEdges.delete(edge.key);
+          sound.playNodeConnect(350);
+          updateProgress();
+          render();
+          return;
+        }
+
+        // Check edge validity
+        const edge = areNodesConnectedByEdge(lastNode, targetNode);
+        if (edge && !activeEdges.has(edge.key)) {
+          activePath.push(targetNode);
+          activeEdges.add(edge.key);
+          sound.playNodeConnect(400 + activePath.length * 30);
+          updateProgress();
+          checkVictory();
+        } else if (edge && activeEdges.has(edge.key)) {
+          sound.playError();
+        }
+      }
+      render();
+    }
+
+    function handlePointerUp() {
+      isDragging = false;
+      render();
+    }
+
+    function updateProgress() {
+      const percentage = Math.round((activeEdges.size / edges.length) * 100);
+      document.getElementById('progressText').innerText = `${percentage}%`;
+    }
+
+    function checkVictory() {
+      if (activeEdges.size === edges.length) {
+        isDragging = false;
+        sound.playWin();
+        spawnWinParticles();
+
+        setTimeout(() => {
+          document.getElementById('statLines').innerText = `${edges.length}/${edges.length} Edges`;
+          document.getElementById('statGrid').innerText = `${levelData.gridSize}x${levelData.gridSize} Grid`;
+          document.getElementById('victoryModal').classList.remove('hidden');
+        }, 400);
+      }
+    }
+
+    // --- Particle Explosions ---
+    function spawnWinParticles() {
+      winParticles = [];
+      const colors = ['#06b6d4', '#3b82f6', '#f59e0b', '#10b981', '#ec4899'];
+      for (let i = 0; i < 70; i++) {
+        winParticles.push({
+          x: bounds.width / 2,
+          y: bounds.height / 2,
+          vx: (Math.random() - 0.5) * 12,
+          vy: (Math.random() - 0.5) * 12,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          size: Math.random() * 6 + 3,
+          alpha: 1
+        });
+      }
+    }
+
+    // --- Rendering Engine ---
+    function render() {
+      ctx.save();
+      ctx.scale(scaleRatio, scaleRatio);
+      ctx.clearRect(0, 0, bounds.width, bounds.height);
+
+      // 1. Draw Inactive Edges
+      ctx.lineWidth = 6;
+      ctx.lineCap = 'round';
+      edges.forEach(e => {
+        const isTraversed = activeEdges.has(e.key);
+        ctx.strokeStyle = isTraversed ? '#06b6d4' : '#334155';
+        ctx.beginPath();
+        ctx.moveTo(e.u.x, e.u.y);
+        ctx.lineTo(e.v.x, e.v.y);
+        ctx.stroke();
+      });
+
+      // 2. Draw Active Path
+      if (activePath.length > 1) {
+        ctx.lineWidth = 8;
+        ctx.strokeStyle = '#22d3ee';
+        ctx.shadowColor = '#06b6d4';
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.moveTo(activePath[0].x, activePath[0].y);
+        for (let i = 1; i < activePath.length; i++) {
+          ctx.lineTo(activePath[i].x, activePath[i].y);
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+
+      // 3. Draw Dragging Rubber Line
+      if (isDragging && activePath.length > 0) {
+        const lastNode = activePath[activePath.length - 1];
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'rgba(34, 211, 238, 0.5)';
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath();
+        ctx.moveTo(lastNode.x, lastNode.y);
+        ctx.lineTo(currentPointerPos.x, currentPointerPos.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // 4. Draw Graph Nodes
+      nodes.forEach(n => {
+        const isSelected = activePath.length > 0 && activePath[activePath.length - 1] === n;
+        const isVisited = activePath.includes(n);
+
+        if (isSelected) {
+          ctx.fillStyle = 'rgba(6, 182, 212, 0.25)';
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, 22, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.fillStyle = isSelected ? '#38bdf8' : (isVisited ? '#0e7490' : '#1e293b');
+        ctx.strokeStyle = isSelected ? '#ffffff' : (isVisited ? '#22d3ee' : '#64748b');
+        ctx.lineWidth = 3;
+
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = isSelected ? '#ffffff' : '#94a3b8';
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // 5. Draw Particles
+      for (let i = winParticles.length - 1; i >= 0; i--) {
+        let p = winParticles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.alpha -= 0.015;
+        if (p.alpha <= 0) {
+          winParticles.splice(i, 1);
+          continue;
+        }
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1.0;
+
+      ctx.restore();
+
+      if (winParticles.length > 0) {
+        requestAnimationFrame(render);
+      }
+    }
+
+    // --- Hint Logic ---
+    function triggerHint() {
+      if (hintCount <= 0 || !levelData) return;
+
+      hintCount--;
+      document.getElementById('hintCount').innerText = hintCount;
+
+      activePath = [];
+      activeEdges.clear();
+
+      const solutionNodes = levelData.solutionPath.map(pt => {
+        return nodes.find(n => n.gridX === pt.x && n.gridY === pt.y);
+      });
+
+      let hintStep = 0;
+      const interval = setInterval(() => {
+        if (hintStep < Math.min(solutionNodes.length, 5)) {
+          const target = solutionNodes[hintStep];
+          if (target) {
+            if (activePath.length > 0) {
+              const edge = areNodesConnectedByEdge(activePath[activePath.length - 1], target);
+              if (edge) activeEdges.add(edge.key);
+            }
+            activePath.push(target);
+            sound.playNodeConnect(450);
+            updateProgress();
+            render();
+          }
+          hintStep++;
+        } else {
+          clearInterval(interval);
+        }
+      }, 180);
+    }
+
+    // --- DOM Event Listeners ---
+    window.addEventListener('resize', resizeCanvas);
+
+    canvas.addEventListener('mousedown', handlePointerDown);
+    canvas.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+
+    canvas.addEventListener('touchstart', handlePointerDown, { passive: true });
+    canvas.addEventListener('touchmove', handlePointerMove, { passive: true });
+    window.addEventListener('touchend', handlePointerUp);
+
+    document.getElementById('restartBtn').addEventListener('click', () => {
+      activePath = [];
+      activeEdges.clear();
+      updateProgress();
+      render();
+    });
+
+    document.getElementById('hintBtn').addEventListener('click', triggerHint);
+
+    document.getElementById('nextLevelBtn').addEventListener('click', () => {
+      loadLevel(currentLevel + 1);
+    });
+
+    // --- Initialize Game ---
+    window.onload = () => {
+      resizeCanvas();
+      loadLevel(1);
+    };
+  </script>
+</body>
+</html>

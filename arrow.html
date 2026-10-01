@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Arrow Escape Infinite</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background: #0f172a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      color: #f8fafc;
+      overflow: hidden;
+      touch-action: manipulation;
+    }
+
+    .game-wrapper {
+      position: relative;
+      width: 100%;
+      max-width: 440px;
+      height: 100vh;
+      max-height: 750px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px;
+      background: radial-gradient(circle, #1e293b 0%, #0f172a 100%);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8);
+      border-radius: 16px;
+    }
+
+    .header {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 8px;
+    }
+
+    .level-badge {
+      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+      padding: 6px 18px;
+      border-radius: 20px;
+      font-size: 18px;
+      font-weight: 800;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+    }
+
+    .btn {
+      background: #ef4444;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      font-size: 14px;
+      font-weight: bold;
+      border-radius: 20px;
+      cursor: pointer;
+      box-shadow: 0 4px 0 #b91c1c;
+      transition: transform 0.1s;
+    }
+
+    .btn:active {
+      transform: translateY(2px);
+      box-shadow: 0 2px 0 #b91c1c;
+    }
+
+    canvas {
+      width: 100%;
+      height: calc(100% - 75px);
+      background: #1e293b;
+      border-radius: 12px;
+      box-shadow: inset 0 0 20px rgba(0,0,0,0.6), 0 8px 20px rgba(0,0,0,0.5);
+      border: 3px solid #334155;
+    }
+
+    .footer-text {
+      font-size: 12px;
+      color: #94a3b8;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="game-wrapper">
+    <div class="header">
+      <div class="level-badge" id="levelDisplay">Level 1</div>
+      <button class="btn" id="resetBtn">Restart</button>
+    </div>
+
+    <canvas id="gameCanvas" width="380" height="580"></canvas>
+    
+    <div class="footer-text">
+      Tap an arrow to escape! It can only move in its head direction 🎯
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const levelDisplay = document.getElementById("levelDisplay");
+    const resetBtn = document.getElementById("resetBtn");
+
+    // Audio Synthesizer
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+
+    function initAudio() {
+      if (!audioCtx) audioCtx = new AudioContext();
+    }
+
+    function playSound(type) {
+      if (!audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      const now = audioCtx.currentTime;
+      if (type === 'move') {
+        osc.frequency.setValueAtTime(300, now);
+        osc.frequency.exponentialRampToValueAtTime(600, now + 0.08);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.08);
+        osc.start(now);
+        osc.stop(now + 0.08);
+      } else if (type === 'block') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.setValueAtTime(100, now + 0.05);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
+        osc.start(now);
+        osc.stop(now + 0.1);
+      } else if (type === 'escape') {
+        osc.frequency.setValueAtTime(500, now);
+        osc.frequency.exponentialRampToValueAtTime(1000, now + 0.15);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.15);
+        osc.start(now);
+        osc.stop(now + 0.15);
+      } else if (type === 'win') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(350, now);
+        osc.frequency.setValueAtTime(450, now + 0.1);
+        osc.frequency.setValueAtTime(550, now + 0.2);
+        osc.frequency.setValueAtTime(700, now + 0.3);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.5);
+        osc.start(now);
+        osc.stop(now + 0.5);
+      }
+    }
+
+    const DIRS = {
+      UP:    { dx: 0,  dy: -1, angle: -Math.PI / 2 },
+      DOWN:  { dx: 0,  dy: 1,  angle: Math.PI / 2 },
+      LEFT:  { dx: -1, dy: 0,  angle: Math.PI },
+      RIGHT: { dx: 1,  dy: 0,  angle: 0 }
+    };
+
+    const DIR_KEYS = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
+
+    let currentLevel = 1;
+    let gridSize = 4;
+    let tileSize = 60;
+    let offsetX = 0;
+    let offsetY = 0;
+    let arrows = [];
+    let isAnimating = false;
+    let isWinning = false;
+
+    // Guaranteed Solvable Generator via Reverse Backtracking
+    function generateLevel(levelNum) {
+      currentLevel = levelNum;
+      levelDisplay.innerText = `Level ${currentLevel}`;
+      isWinning = false;
+      isAnimating = false;
+
+      gridSize = 4 + Math.min(Math.floor((levelNum - 1) / 3), 3); // Max 7x7
+      tileSize = Math.floor(Math.min(340 / gridSize, 480 / gridSize));
+
+      offsetX = (canvas.width - gridSize * tileSize) / 2;
+      offsetY = (canvas.height - gridSize * tileSize) / 2;
+
+      arrows = [];
+      const board = Array.from({ length: gridSize }, () => Array(gridSize).fill(null));
+
+      const targetCount = Math.min(gridSize * gridSize - 2, 3 + levelNum * 2);
+      let placedCount = 0;
+
+      // STEP 1: Place 1-2 Anchor arrows that point directly off the board
+      let anchorsPlaced = 0;
+      while (anchorsPlaced < Math.min(2, targetCount)) {
+        let r = Math.floor(Math.random() * gridSize);
+        let c = Math.floor(Math.random() * gridSize);
+
+        if (board[r][c] !== null) continue;
+
+        // Find directions that point directly to the edge with no obstacle
+        let edgeDirs = [];
+        for (let key of DIR_KEYS) {
+          let dir = DIRS[key];
+          let checkR = r + dir.dy;
+          let checkC = c + dir.dx;
+
+          if (checkR < 0 || checkR >= gridSize || checkC < 0 || checkC >= gridSize) {
+            edgeDirs.push(key);
+          }
+        }
+
+        if (edgeDirs.length > 0) {
+          let selectedKey = edgeDirs[Math.floor(Math.random() * edgeDirs.length)];
+          let arrow = createArrowObject(placedCount++, r, c, selectedKey);
+          arrows.push(arrow);
+          board[r][c] = arrow;
+          anchorsPlaced++;
+        }
+      }
+
+      // STEP 2: Place remaining arrows such that every new arrow points into an existing arrow or off-board
+      let attempts = 0;
+      while (placedCount < targetCount && attempts < 1000) {
+        attempts++;
+        let r = Math.floor(Math.random() * gridSize);
+        let c = Math.floor(Math.random() * gridSize);
+
+        if (board[r][c] !== null) continue;
+
+        let validKeys = [];
+        for (let key of DIR_KEYS) {
+          let dir = DIRS[key];
+          let targetR = r + dir.dy;
+          let targetC = c + dir.dx;
+
+          // Allowed if pointing outside grid OR pointing into an already placed arrow (which will eventually escape)
+          if (
+            targetR < 0 || targetR >= gridSize || targetC < 0 || targetC >= gridSize ||
+            board[targetR][targetC] !== null
+          ) {
+            validKeys.push(key);
+          }
+        }
+
+        if (validKeys.length > 0) {
+          let selectedKey = validKeys[Math.floor(Math.random() * validKeys.length)];
+          let arrow = createArrowObject(placedCount++, r, c, selectedKey);
+          arrows.push(arrow);
+          board[r][c] = arrow;
+        }
+      }
+
+      // Verify at least one move exists at start
+      if (!hasValidMove()) {
+        generateLevel(levelNum); // Auto-regenerate if edge case fails
+      }
+    }
+
+    function createArrowObject(id, r, c, dirKey) {
+      return {
+        id: id,
+        r: r,
+        c: c,
+        dirKey: dirKey,
+        dir: DIRS[dirKey],
+        renderX: offsetX + c * tileSize + tileSize / 2,
+        renderY: offsetY + r * tileSize + tileSize / 2,
+        isEscaped: false
+      };
+    }
+
+    function hasValidMove() {
+      return arrows.some(arrow => {
+        let r = arrow.r + arrow.dir.dy;
+        let c = arrow.c + arrow.dir.dx;
+
+        while (r >= 0 && r < gridSize && c >= 0 && c < gridSize) {
+          let blocker = arrows.find(a => !a.isEscaped && a.r === r && a.c === c);
+          if (blocker) return false;
+          r += arrow.dir.dy;
+          c += arrow.dir.dx;
+        }
+        return true;
+      });
+    }
+
+    function handleTap(clientX, clientY) {
+      initAudio();
+      if (isAnimating || isWinning) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const tapX = (clientX - rect.left) * (canvas.width / rect.width);
+      const tapY = (clientY - rect.top) * (canvas.height / rect.height);
+
+      for (let arrow of arrows) {
+        if (arrow.isEscaped) continue;
+
+        let dist = Math.hypot(tapX - arrow.renderX, tapY - arrow.renderY);
+        if (dist < tileSize * 0.45) {
+          tryMoveArrow(arrow);
+          break;
+        }
+      }
+    }
+
+    function tryMoveArrow(arrow) {
+      const { dx, dy } = arrow.dir;
+      let currR = arrow.r;
+      let currC = arrow.c;
+      let blocked = false;
+      let steps = 0;
+
+      while (true) {
+        currR += dy;
+        currC += dx;
+
+        if (currR < 0 || currR >= gridSize || currC < 0 || currC >= gridSize) {
+          break;
+        }
+
+        let blocker = arrows.find(a => !a.isEscaped && a.r === currR && a.c === currC);
+        if (blocker) {
+          blocked = true;
+          break;
+        }
+
+        steps++;
+      }
+
+      if (blocked && steps === 0) {
+        playSound('block');
+        shakeArrow(arrow);
+      } else {
+        animateArrowMovement(arrow, steps, blocked);
+      }
+    }
+
+    function shakeArrow(arrow) {
+      isAnimating = true;
+      let originalX = arrow.renderX;
+      let originalY = arrow.renderY;
+      let count = 0;
+
+      let shakeInterval = setInterval(() => {
+        count++;
+        let offset = (count % 2 === 0 ? 1 : -1) * 4;
+        if (arrow.dirKey === 'LEFT' || arrow.dirKey === 'RIGHT') {
+          arrow.renderY = originalY + offset;
+        } else {
+          arrow.renderX = originalX + offset;
+        }
+
+        if (count > 5) {
+          clearInterval(shakeInterval);
+          arrow.renderX = originalX;
+          arrow.renderY = originalY;
+          isAnimating = false;
+        }
+      }, 30);
+    }
+
+    function animateArrowMovement(arrow, steps, blocked) {
+      isAnimating = true;
+      playSound('move');
+
+      let startX = arrow.renderX;
+      let startY = arrow.renderY;
+      let targetR = arrow.r + arrow.dir.dy * steps;
+      let targetC = arrow.c + arrow.dir.dx * steps;
+
+      let targetX = offsetX + targetC * tileSize + tileSize / 2;
+      let targetY = offsetY + targetR * tileSize + tileSize / 2;
+
+      if (!blocked) {
+        targetX += arrow.dir.dx * tileSize * 1.5;
+        targetY += arrow.dir.dy * tileSize * 1.5;
+      }
+
+      let duration = 160 + steps * 35;
+      let startTime = performance.now();
+
+      function step(now) {
+        let elapsed = now - startTime;
+        let progress = Math.min(elapsed / duration, 1);
+
+        arrow.renderX = startX + (targetX - startX) * progress;
+        arrow.renderY = startY + (targetY - startY) * progress;
+
+        if (progress < 1) {
+          requestAnimationFrame(step);
+        } else {
+          if (!blocked) {
+            arrow.isEscaped = true;
+            playSound('escape');
+            checkWinCondition();
+          } else {
+            arrow.r = targetR;
+            arrow.c = targetC;
+            playSound('block');
+          }
+          isAnimating = false;
+        }
+      }
+
+      requestAnimationFrame(step);
+    }
+
+    function checkWinCondition() {
+      if (arrows.every(a => a.isEscaped) && !isWinning) {
+        isWinning = true;
+        playSound('win');
+        setTimeout(() => {
+          alert(`🎉 Level ${currentLevel} Cleared!`);
+          generateLevel(currentLevel + 1);
+        }, 300);
+      }
+    }
+
+    function draw() {
+      ctx.fillStyle = "#1e293b";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw Grid Slots
+      for (let r = 0; r < gridSize; r++) {
+        for (let c = 0; c < gridSize; c++) {
+          let x = offsetX + c * tileSize;
+          let y = offsetY + r * tileSize;
+
+          ctx.fillStyle = "#0f172a";
+          ctx.fillRect(x + 2, y + 2, tileSize - 4, tileSize - 4);
+          ctx.strokeStyle = "#334155";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x + 2, y + 2, tileSize - 4, tileSize - 4);
+        }
+      }
+
+      // Draw Arrows
+      arrows.forEach(arrow => {
+        if (arrow.isEscaped) return;
+
+        ctx.save();
+        ctx.translate(arrow.renderX, arrow.renderY);
+        ctx.rotate(arrow.dir.angle);
+
+        let size = tileSize * 0.78;
+        ctx.fillStyle = "#3b82f6";
+        ctx.beginPath();
+        ctx.roundRect(-size / 2, -size / 2, size, size, 10);
+        ctx.fill();
+
+        ctx.strokeStyle = "#60a5fa";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.moveTo(size * 0.25, 0);
+        ctx.lineTo(-size * 0.2, -size * 0.25);
+        ctx.lineTo(-size * 0.05, 0);
+        ctx.lineTo(-size * 0.2, size * 0.25);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+      });
+    }
+
+    canvas.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      handleTap(touch.clientX, touch.clientY);
+    }, { passive: false });
+
+    canvas.addEventListener("mousedown", (e) => {
+      handleTap(e.clientX, e.clientY);
+    });
+
+    resetBtn.addEventListener("click", () => {
+      generateLevel(currentLevel);
+    });
+
+    function gameLoop() {
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    generateLevel(1);
+    gameLoop();
+  </script>
+</body>
+</html>
